@@ -73,7 +73,7 @@ class DependencyParser(nn.Module):
         self.hidden_dim = hidden_dim
         self.encoder = BiLstm(embedding_dim=345,
                               hidden_dim=self.hidden_dim,
-                              num_layers=2)  # Implement BiLSTM module which is fed with word embeddings and outputs hidden representations
+                              num_layers=3)  # Implement BiLSTM module which is fed with word embeddings and outputs hidden representations
 
         self.in_linear1 = nn.Linear(self.hidden_dim * 4, 128)
         self.nl1 = nn.ReLU()
@@ -111,7 +111,8 @@ class DependencyParser(nn.Module):
         score_matrix = torch.zeros((len(available_words), len(available_words)), dtype=torch.float32)
         for idx1, word1 in enumerate(available_words):
             for idx2, word2 in enumerate(available_words):
-                target_output = torch.tensor([100.]).to(device) if idx2 == true_tree_heads[idx1] else torch.tensor([0.]).to(device)
+                target_output = torch.tensor([100.]).to(device) if idx2 == true_tree_heads[idx1] else torch.tensor(
+                    [0.]).to(device)
                 network_input = torch.cat((word1, word2)).to(device)
                 output = self.network(network_input)
                 if loss_forward is None:
@@ -124,16 +125,29 @@ class DependencyParser(nn.Module):
         score_matrix = softmax(score_matrix, axis=1)
 
         # get the Max-spanning tree
-        T_forward = decode_mst(score_matrix, len(available_words), has_labels=False)
+        T_forward = decode_mst(score_matrix.T, len(available_words), has_labels=False)
 
         return loss_forward, T_forward
 
 
 train_ds = get_df(r'train.labeled')
-
+eval_ds = get_df(r'test.labeled')
 EPOCHS = range(5)
 model = DependencyParser(100).to(device)
 optim = torch.optim.Adam(model.parameters(), lr=0.01)
+model.load_state_dict(torch.load(r'night_model_after_4_epoch', map_location=torch.device('cpu')))
+
+# accuracies = []
+# for idx, sentence in tqdm(enumerate(eval_ds)):
+#     loss, T = model(sentence)
+#     accuracy = np.sum(T[0][1:] == np.array([int(x) for x in sentence["Token Head"].values])) / T[0].size
+#     accuracies.append(accuracy)
+#
+# total_acc = sum(accuracies) / len(accuracies)
+# if total_acc > 0.7:
+#     print(f"V-V-V-V-V {total_acc} ***** w7sh")
+# else:
+#     print(f"*X*X*X*X only got {total_acc}")
 
 for epoch in EPOCHS:
     losses = []
