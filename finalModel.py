@@ -73,17 +73,21 @@ class DependencyParser(nn.Module):
         self.hidden_dim = hidden_dim
         self.encoder = BiLstm(embedding_dim=345,
                               hidden_dim=self.hidden_dim,
-                              num_layers=2)  # Implement BiLSTM module which is fed with word embeddings and outputs hidden representations # TODO: change num_layers to 3
+                              num_layers=4)  # Implement BiLSTM module which is fed with word embeddings and outputs hidden representations # TODO: change num_layers to 4
 
-        self.in_linear1 = nn.Linear(self.hidden_dim * 4, 128) # TODO: change the network architecture
+        self.in_linear1 = nn.Linear(self.hidden_dim * 4, 256) # TODO: change the network architecture
         self.nl1 = nn.ReLU()
-        self.mid_linear = nn.Linear(128, 64)
+        self.mid_linear1 = nn.Linear(256, 128)
         self.nl2 = nn.ReLU()
+        self.mid_linear2 = nn.Linear(128, 64)
+        self.nl3 = nn.ReLU()
         self.out_linear = nn.Linear(64, 1)
         self.network = nn.Sequential(self.in_linear1,
                                      self.nl1,
-                                     self.mid_linear,
+                                     self.mid_linear1,
                                      self.nl2,
+                                     self.mid_linear2,
+                                     self.nl3,
                                      self.out_linear).to(device)
         self.mst_predictor = decode_mst
         self.loss_fn = torch.nn.MSELoss().to(device)  # Implement the loss function described above
@@ -104,7 +108,7 @@ class DependencyParser(nn.Module):
         lstm_output = self.encoder(
             [np.concatenate((emb_word, emb_pos)) for (emb_word, emb_pos) in zip(emb_words, emb_poses)])
 
-        available_words = torch.row_stack((torch.zeros(200).to(device), lstm_output.to(device))) # zeros is the representation of the [ROOT] # TODO : the [ROOT] does not go through the lstm, you can try passing it through
+        available_words = torch.row_stack((torch.zeros(self.hidden_dim*2).to(device), lstm_output.to(device))) # zeros is the representation of the [ROOT] # TODO : the [ROOT] does not go through the lstm, you can try passing it through
 
         # Get score for each possible edge in the parsing graph, construct score matrix
         crit = self.loss_fn
@@ -133,10 +137,10 @@ class DependencyParser(nn.Module):
 
 train_ds = get_df(r'train.labeled')
 eval_ds = get_df(r'test.labeled')
-EPOCHS = range(5)
-model = DependencyParser(100).to(device) # TODO :  change the embedding dim from 100 (200/250 for example)
+EPOCHS = range(20)
+model = DependencyParser(250).to(device) # TODO :  change the embedding dim from 100 (200/250 for example)
 optim = torch.optim.Adam(model.parameters(), lr=0.01)
-model.load_state_dict(torch.load(r'night_model_after_3_epoch', map_location=torch.device('cpu'))) # TODO : remove this ! we want to train from scartch
+# model.load_state_dict(torch.load(r'night_model_after_3_epoch', map_location=torch.device('cpu'))) # TODO : remove this ! we want to train from scartch
 
 for epoch in EPOCHS:
     losses = []
