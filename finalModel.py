@@ -68,14 +68,14 @@ class DependencyParser(nn.Module):
         super(DependencyParser, self).__init__()
         self.GLOVE_FILE = 'glove.6B.300d.txt'
         self.word_embedding = dict(get_coefs(*o.strip().split()) for o in tqdm(open(self.GLOVE_FILE,
-                                                                                    encoding='utf-8')))  # TODO: copy embedding model # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
+                                                                                    encoding='utf-8')))  # TODO: Implement embedding layer for words (can be new or pretrained - word2vec/glove)
         self.pos_embedding = PosEncoding()
         self.hidden_dim = hidden_dim
         self.encoder = BiLstm(embedding_dim=345,
                               hidden_dim=self.hidden_dim,
-                              num_layers=3)  # Implement BiLSTM module which is fed with word embeddings and outputs hidden representations
+                              num_layers=2)  # Implement BiLSTM module which is fed with word embeddings and outputs hidden representations # TODO: change num_layers to 3
 
-        self.in_linear1 = nn.Linear(self.hidden_dim * 4, 128)
+        self.in_linear1 = nn.Linear(self.hidden_dim * 4, 128) # TODO: change the network architecture
         self.nl1 = nn.ReLU()
         self.mid_linear = nn.Linear(128, 64)
         self.nl2 = nn.ReLU()
@@ -86,7 +86,7 @@ class DependencyParser(nn.Module):
                                      self.nl2,
                                      self.out_linear).to(device)
         self.mst_predictor = decode_mst
-        self.loss_fn = nn.NLLLoss()  # Implement the loss function described above
+        self.loss_fn = torch.nn.MSELoss().to(device)  # Implement the loss function described above
 
     def forward(self, sentence_forward):
         words = sentence_forward["Token"].values
@@ -97,16 +97,17 @@ class DependencyParser(nn.Module):
         # Pass word and pos through their embedding layer
         emb_words = [
             self.word_embedding.get(word) if self.word_embedding.get(word) is not None else self.word_embedding['word']
-            for word in words]
+            for word in words]  # TODO : try to change the embedding to deal with OOV
         emb_poses = [self.pos_embedding[pos] for pos in poses]
 
         # Get Bi-LSTM hidden representation for each word in sentence
         lstm_output = self.encoder(
             [np.concatenate((emb_word, emb_pos)) for (emb_word, emb_pos) in zip(emb_words, emb_poses)])
 
-        available_words = torch.row_stack((torch.zeros(200).to(device), lstm_output.to(device)))
+        available_words = torch.row_stack((torch.zeros(200).to(device), lstm_output.to(device))) # zeros is the representation of the [ROOT] # TODO : the [ROOT] does not go through the lstm, you can try passing it through
+
         # Get score for each possible edge in the parsing graph, construct score matrix
-        crit = torch.nn.MSELoss().to(device)
+        crit = self.loss_fn
         loss_forward = None
         score_matrix = torch.zeros((len(available_words), len(available_words)), dtype=torch.float32)
         for idx1, word1 in enumerate(available_words):
@@ -133,21 +134,21 @@ class DependencyParser(nn.Module):
 train_ds = get_df(r'train.labeled')
 eval_ds = get_df(r'test.labeled')
 EPOCHS = range(5)
-model = DependencyParser(100).to(device)
+model = DependencyParser(100).to(device) # TODO :  change the embedding dim from 100 (200/250 for example)
 optim = torch.optim.Adam(model.parameters(), lr=0.01)
-model.load_state_dict(torch.load(r'night_model_after_4_epoch', map_location=torch.device('cpu')))
+model.load_state_dict(torch.load(r'night_model_after_3_epoch', map_location=torch.device('cpu'))) # TODO : remove this ! we want to train from scartch
 
-# accuracies = []
-# for idx, sentence in tqdm(enumerate(eval_ds)):
-#     loss, T = model(sentence)
-#     accuracy = np.sum(T[0][1:] == np.array([int(x) for x in sentence["Token Head"].values])) / T[0].size
-#     accuracies.append(accuracy)
-#
-# total_acc = sum(accuracies) / len(accuracies)
-# if total_acc > 0.7:
-#     print(f"V-V-V-V-V {total_acc} ***** w7sh")
-# else:
-#     print(f"*X*X*X*X only got {total_acc}")
+accuracies = []
+for idx, sentence in tqdm(enumerate(eval_ds)):
+    loss, T = model(sentence)
+    accuracy = np.sum(T[0][1:] == np.array([int(x) for x in sentence["Token Head"].values])) / T[0].size
+    accuracies.append(accuracy)
+
+total_acc = sum(accuracies) / len(accuracies)
+if total_acc > 0.7:
+    print(f"V-V-V-V-V accuracy \t {total_acc} ***** w7sh")
+else:
+    print(f"*X*X*X*X  accuracy \tonly got {total_acc}")
 
 for epoch in EPOCHS:
     losses = []
@@ -172,4 +173,15 @@ for epoch in EPOCHS:
             print(f"average accuracy in the last 100 sentences loss is : {sum(accuracies[-100:]) / 100}")
             print(f" last tree was {T}")
             print("*****************************************************************")
-    torch.save(model.state_dict(), f"night_model_after_{epoch}_epoch")
+    torch.save(model.state_dict(), f"final_model_after_{epoch}_epoch")
+    accuracies = []
+    for idx, sentence in tqdm(enumerate(eval_ds)):
+        loss, T = model(sentence)
+        accuracy = np.sum(T[0][1:] == np.array([int(x) for x in sentence["Token Head"].values])) / T[0].size
+        accuracies.append(accuracy)
+
+    total_acc = sum(accuracies) / len(accuracies)
+    if total_acc > 0.7:
+        print(f"V-V-V-V-V epoch {epoch} with accuracy \t {total_acc} ***** w7sh")
+    else:
+        print(f"*X*X*X*X epoch {epoch} with accuracy \tonly got {total_acc}")
